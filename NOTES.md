@@ -10,7 +10,9 @@ instructions left open.
   errors. This directly meets the "money must be handled exactly" rule.
 - Amounts typed by a user (such as `50.00`) are parsed through `Decimal` and
   then converted to pesewas. Input more precise than one pesewa (for example
-  `50.001`) is rejected rather than silently rounded.
+  `50.001`) is rejected rather than silently rounded. This is a point I am truing to drive home
+  is that if incase we have an error, let the programme fail loudly at the site of the failure
+  so we can debug easiley (I got this from The Pragmatic Programmer)
 
 ## Member identity
 
