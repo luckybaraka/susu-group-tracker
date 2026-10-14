@@ -41,6 +41,30 @@ class CloseResult:
     debtors: tuple[Debtor, ...] = ()
 
 
+@dataclass(frozen=True)
+class MemberStatus:
+    """A member's payment position for a single week."""
+
+    name: str
+    paid: Money
+    owed: Money
+    paid_in_full: bool
+
+
+@dataclass(frozen=True)
+class Report:
+    """A snapshot of the group: the current week, who is paid up, and history."""
+
+    group_name: str
+    weekly_amount: Money
+    current_week: int
+    complete: bool
+    next_recipient: str | None
+    pot: Money
+    statuses: tuple[MemberStatus, ...]
+    payouts: tuple[dict, ...]
+
+
 class SusuGroup:
     """One rotating savings group.
 
@@ -212,3 +236,39 @@ class SusuGroup:
         self._payouts.append({"week": week, "member": recipient, "amount": pot})
         self.current_week += 1
         return CloseResult(week=week, closed=True, recipient=recipient, payout=pot)
+
+    def member_statuses(self, week: int | None = None) -> list[MemberStatus]:
+        """Return each member's paid and owed amounts for the given week."""
+        target_week = self.current_week if week is None else week
+        statuses = []
+        for member in self._members:
+            paid = self.amount_paid(member, target_week)
+            owed = self.amount_owed(member, target_week)
+            statuses.append(
+                MemberStatus(
+                    name=member,
+                    paid=paid,
+                    owed=owed,
+                    paid_in_full=not owed.is_positive(),
+                )
+            )
+        return statuses
+
+    def report(self) -> Report:
+        """Build a full report of the group's current state and history.
+
+        When the group is complete there is no open week, so the per-member
+        statuses are left empty and the payout history tells the full story.
+        """
+        complete = self.is_complete()
+        statuses = () if complete else tuple(self.member_statuses())
+        return Report(
+            group_name=self.name,
+            weekly_amount=self.weekly_amount,
+            current_week=self.current_week,
+            complete=complete,
+            next_recipient=self.next_recipient(),
+            pot=self.pot_amount(),
+            statuses=statuses,
+            payouts=tuple(self.payouts),
+        )
