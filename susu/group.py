@@ -272,3 +272,64 @@ class SusuGroup:
             statuses=statuses,
             payouts=tuple(self.payouts),
         )
+
+    def to_dict(self) -> dict:
+        """Serialise the whole group to plain data (money as integer pesewas)."""
+        return {
+            "version": 1,
+            "name": self.name,
+            "weekly_amount_pesewas": self.weekly_amount.pesewas,
+            "current_week": self.current_week,
+            "members": list(self._members),
+            "contributions": {
+                str(week): {
+                    member: amount.pesewas for member, amount in record.items()
+                }
+                for week, record in self._contributions.items()
+            },
+            "payouts": [
+                {
+                    "week": payout["week"],
+                    "member": payout["member"],
+                    "amount_pesewas": payout["amount"].pesewas,
+                }
+                for payout in self._payouts
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SusuGroup":
+        """Rebuild a group from data produced by :meth:`to_dict`.
+
+        This restores saved state directly and does not re-run the member rules,
+        so a group that has already started loads correctly.
+        """
+        try:
+            weekly = Money.from_pesewas(int(data["weekly_amount_pesewas"]))
+            group = cls(data["name"], weekly)
+            group.current_week = int(data["current_week"])
+
+            for name in data["members"]:
+                group._members.append(name)
+                group._member_lookup.add(name)
+
+            for week_text, record in data.get("contributions", {}).items():
+                week = int(week_text)
+                group._contributions[week] = {
+                    member: Money.from_pesewas(int(pesewas))
+                    for member, pesewas in record.items()
+                }
+
+            for payout in data.get("payouts", []):
+                group._payouts.append(
+                    {
+                        "week": int(payout["week"]),
+                        "member": payout["member"],
+                        "amount": Money.from_pesewas(int(payout["amount_pesewas"])),
+                    }
+                )
+            return group
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValidationError(
+                "state data is not a valid susu group: %s" % error
+            )
