@@ -97,3 +97,7 @@ tests/
 ```
 
 See `NOTES.md` for the assumptions and design decisions behind the rules.
+
+## Author
+
+Lucky Baraka
