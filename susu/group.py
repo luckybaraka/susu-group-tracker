@@ -8,12 +8,37 @@ week is fully paid) are enforced here so the command line interface stays thin.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .errors import (
     DuplicateMemberError,
     UnknownMemberError,
     ValidationError,
 )
 from .money import Money
+
+
+@dataclass(frozen=True)
+class Debtor:
+    """A member who still owes money for a week, and how much they owe."""
+
+    name: str
+    owed: Money
+
+
+@dataclass(frozen=True)
+class CloseResult:
+    """The outcome of trying to close a week.
+
+    When ``closed`` is True the pot was paid to ``recipient``. When it is False
+    no payout happened and ``debtors`` lists who still owes and how much.
+    """
+
+    week: int
+    closed: bool
+    recipient: str | None = None
+    payout: Money | None = None
+    debtors: tuple[Debtor, ...] = ()
 
 
 class SusuGroup:
@@ -138,3 +163,52 @@ class SusuGroup:
         current_paid = week_record.get(member, Money.from_pesewas(0))
         week_record[member] = current_paid + amount
         return owed - amount
+
+    @property
+    def payouts(self) -> list[dict]:
+        """Return a copy of the payout history, oldest first."""
+        return [dict(payout) for payout in self._payouts]
+
+    def next_recipient(self) -> str | None:
+        """Return the member due to receive the pot next, or None if complete."""
+        if self.is_complete() or not self._members:
+            return None
+        return self._members[len(self._payouts)]
+
+    def pot_amount(self) -> Money:
+        """Return the full pot for one week: weekly amount times member count."""
+        return self.weekly_amount * len(self._members)
+
+    def debtors(self, week: int | None = None) -> list[Debtor]:
+        """Return the members who still owe money for the given week."""
+        target_week = self.current_week if week is None else week
+        owing = []
+        for member in self._members:
+            owed = self.amount_owed(member, target_week)
+            if owed.is_positive():
+                owing.append(Debtor(member, owed))
+        return owing
+
+    def close_week(self) -> CloseResult:
+        """Try to close the current week.
+
+        If every member has paid in full, the pot is paid to the next member in
+        join order and the group moves to the next week. If anyone still owes,
+        nothing is paid out, the week stays open, and the result lists the
+        debtors so the caller can report who owes what.
+        """
+        if not self._members:
+            raise ValidationError("cannot close a week with no members")
+        if self.is_complete():
+            raise ValidationError("the group has completed every payout")
+
+        week = self.current_week
+        owing = self.debtors(week)
+        if owing:
+            return CloseResult(week=week, closed=False, debtors=tuple(owing))
+
+        recipient = self._members[len(self._payouts)]
+        pot = self.pot_amount()
+        self._payouts.append({"week": week, "member": recipient, "amount": pot})
+        self.current_week += 1
+        return CloseResult(week=week, closed=True, recipient=recipient, payout=pot)
